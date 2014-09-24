@@ -39,7 +39,9 @@ import org.apache.hadoop.yarn.util.resource.Resources;
 
 @Private
 @Unstable
-public abstract class FSQueue extends Schedulable implements Queue {
+public abstract class FSQueue implements Queue, Schedulable {
+  private Resource fairShare = Resources.createResource(0, 0);
+  private Resource steadyFairShare = Resources.createResource(0, 0);
   private final String name;
   protected final FairScheduler scheduler;
   private final FSQueueMetrics metrics;
@@ -139,13 +141,28 @@ public abstract class FSQueue extends Schedulable implements Queue {
   public FSQueueMetrics getMetrics() {
     return metrics;
   }
-  
+
+  /** Get the fair share assigned to this Schedulable. */
+  public Resource getFairShare() {
+    return fairShare;
+  }
+
   @Override
   public void setFairShare(Resource fairShare) {
-    super.setFairShare(fairShare);
+    this.fairShare = fairShare;
     metrics.setFairShare(fairShare);
   }
-  
+
+  /** Get the steady fair share assigned to this Schedulable. */
+  public Resource getSteadyFairShare() {
+    return steadyFairShare;
+  }
+
+  public void setSteadyFairShare(Resource steadyFairShare) {
+    this.steadyFairShare = steadyFairShare;
+    metrics.setSteadyFairShare(steadyFairShare);
+  }
+
   public boolean hasAccess(QueueACL acl, UserGroupInformation user) {
     return scheduler.getAllocationConfiguration().hasAccess(name, acl, user);
   }
@@ -155,7 +172,7 @@ public abstract class FSQueue extends Schedulable implements Queue {
    * queue's current share
    */
   public abstract void recomputeShares();
-  
+
   /**
    * Gets the children of this queue, if any.
    */
@@ -186,5 +203,19 @@ public abstract class FSQueue extends Schedulable implements Queue {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Returns true if queue has at least one app running.
+   */
+  public boolean isActive() {
+    return getNumRunnableApps() > 0;
+  }
+
+  /** Convenient toString implementation for debugging. */
+  @Override
+  public String toString() {
+    return String.format("[%s, demand=%s, running=%s, share=%s, w=%s]",
+        getName(), getDemand(), getResourceUsage(), fairShare, getWeights());
   }
 }

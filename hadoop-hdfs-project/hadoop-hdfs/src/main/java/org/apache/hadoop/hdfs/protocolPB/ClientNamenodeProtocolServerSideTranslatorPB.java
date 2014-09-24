@@ -32,6 +32,7 @@ import org.apache.hadoop.hdfs.protocol.CachePoolEntry;
 import org.apache.hadoop.hdfs.protocol.ClientProtocol;
 import org.apache.hadoop.hdfs.protocol.CorruptFileBlocks;
 import org.apache.hadoop.hdfs.protocol.DirectoryListing;
+import org.apache.hadoop.hdfs.protocol.EncryptionZoneWithId;
 import org.apache.hadoop.hdfs.protocol.HdfsFileStatus;
 import org.apache.hadoop.hdfs.protocol.LocatedBlock;
 import org.apache.hadoop.hdfs.protocol.LocatedBlocks;
@@ -174,6 +175,14 @@ import org.apache.hadoop.hdfs.protocol.proto.ClientNamenodeProtocolProtos.Update
 import org.apache.hadoop.hdfs.protocol.proto.ClientNamenodeProtocolProtos.UpdateBlockForPipelineResponseProto;
 import org.apache.hadoop.hdfs.protocol.proto.ClientNamenodeProtocolProtos.UpdatePipelineRequestProto;
 import org.apache.hadoop.hdfs.protocol.proto.ClientNamenodeProtocolProtos.UpdatePipelineResponseProto;
+import org.apache.hadoop.hdfs.protocol.proto.ClientNamenodeProtocolProtos.CheckAccessRequestProto;
+import org.apache.hadoop.hdfs.protocol.proto.ClientNamenodeProtocolProtos.CheckAccessResponseProto;
+import org.apache.hadoop.hdfs.protocol.proto.EncryptionZonesProtos.CreateEncryptionZoneResponseProto;
+import org.apache.hadoop.hdfs.protocol.proto.EncryptionZonesProtos.CreateEncryptionZoneRequestProto;
+import org.apache.hadoop.hdfs.protocol.proto.EncryptionZonesProtos.GetEZForPathResponseProto;
+import org.apache.hadoop.hdfs.protocol.proto.EncryptionZonesProtos.GetEZForPathRequestProto;
+import org.apache.hadoop.hdfs.protocol.proto.EncryptionZonesProtos.ListEncryptionZonesResponseProto;
+import org.apache.hadoop.hdfs.protocol.proto.EncryptionZonesProtos.ListEncryptionZonesRequestProto;
 import org.apache.hadoop.hdfs.protocol.proto.HdfsProtos.DatanodeIDProto;
 import org.apache.hadoop.hdfs.protocol.proto.HdfsProtos.DatanodeInfoProto;
 import org.apache.hadoop.hdfs.protocol.proto.HdfsProtos.LocatedBlockProto;
@@ -320,6 +329,9 @@ public class ClientNamenodeProtocolServerSideTranslatorPB implements
   private static final RemoveXAttrResponseProto
     VOID_REMOVEXATTR_RESPONSE = RemoveXAttrResponseProto.getDefaultInstance();
 
+  private static final CheckAccessResponseProto
+    VOID_CHECKACCESS_RESPONSE = CheckAccessResponseProto.getDefaultInstance();
+
   /**
    * Constructor
    * 
@@ -371,7 +383,8 @@ public class ClientNamenodeProtocolServerSideTranslatorPB implements
       HdfsFileStatus result = server.create(req.getSrc(),
           PBHelper.convert(req.getMasked()), req.getClientName(),
           PBHelper.convertCreateFlag(req.getCreateFlag()), req.getCreateParent(),
-          (short) req.getReplication(), req.getBlockSize());
+          (short) req.getReplication(), req.getBlockSize(), 
+          PBHelper.convertCipherSuiteProtos(req.getCipherSuitesList()));
 
       if (result != null) {
         return CreateResponseProto.newBuilder().setFs(PBHelper.convert(result))
@@ -1296,6 +1309,52 @@ public class ClientNamenodeProtocolServerSideTranslatorPB implements
   }
   
   @Override
+  public CreateEncryptionZoneResponseProto createEncryptionZone(
+    RpcController controller, CreateEncryptionZoneRequestProto req)
+    throws ServiceException {
+    try {
+      server.createEncryptionZone(req.getSrc(), req.getKeyName());
+      return CreateEncryptionZoneResponseProto.newBuilder().build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  @Override
+  public GetEZForPathResponseProto getEZForPath(
+      RpcController controller, GetEZForPathRequestProto req)
+      throws ServiceException {
+    try {
+      GetEZForPathResponseProto.Builder builder =
+          GetEZForPathResponseProto.newBuilder();
+      final EncryptionZoneWithId ret = server.getEZForPath(req.getSrc());
+      builder.setZone(PBHelper.convert(ret));
+      return builder.build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  @Override
+  public ListEncryptionZonesResponseProto listEncryptionZones(
+    RpcController controller, ListEncryptionZonesRequestProto req)
+    throws ServiceException {
+    try {
+      BatchedEntries<EncryptionZoneWithId> entries = server
+          .listEncryptionZones(req.getId());
+      ListEncryptionZonesResponseProto.Builder builder =
+          ListEncryptionZonesResponseProto.newBuilder();
+      builder.setHasMore(entries.hasMore());
+      for (int i=0; i<entries.size(); i++) {
+        builder.addZones(PBHelper.convert(entries.get(i)));
+      }
+      return builder.build();
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+  }
+
+  @Override
   public SetXAttrResponseProto setXAttr(RpcController controller,
       SetXAttrRequestProto req) throws ServiceException {
     try {
@@ -1337,5 +1396,16 @@ public class ClientNamenodeProtocolServerSideTranslatorPB implements
       throw new ServiceException(e);
     }
     return VOID_REMOVEXATTR_RESPONSE;
+  }
+
+  @Override
+  public CheckAccessResponseProto checkAccess(RpcController controller,
+     CheckAccessRequestProto req) throws ServiceException {
+    try {
+      server.checkAccess(req.getPath(), PBHelper.convert(req.getMode()));
+    } catch (IOException e) {
+      throw new ServiceException(e);
+    }
+    return VOID_CHECKACCESS_RESPONSE;
   }
 }
